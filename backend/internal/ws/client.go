@@ -24,13 +24,15 @@ var upgrader = websocket.Upgrader{
 
 // Client represente une connexion WebSocket.
 type Client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan []byte
+	hub    *Hub
+	conn   *websocket.Conn
+	send   chan []byte
+	userID string // vide pour un visiteur non connecte
 }
 
 // ServeWS gere l'upgrade HTTP → WebSocket et lance les goroutines read/write.
-func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request) {
+// userID est l'utilisateur authentifie (vide si anonyme).
+func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request, userID string) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[ws] erreur upgrade: %v", err)
@@ -38,9 +40,10 @@ func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &Client{
-		hub:  hub,
-		conn: conn,
-		send: make(chan []byte, sendBufSize),
+		hub:    hub,
+		conn:   conn,
+		send:   make(chan []byte, sendBufSize),
+		userID: userID,
 	}
 	hub.Register(client)
 
