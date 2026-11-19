@@ -52,3 +52,16 @@ type AuthResponse struct {
 	Token string `json:"token"`
 	User  User   `json:"user"`
 }
+
+// DeleteAccountRequest confirms an account deletion with the password.
+type DeleteAccountRequest struct {
+	Password string `json:"password"`
+}
+
+func (r DeleteAccountRequest) Validate() map[string]string {
+	errs := make(map[string]string)
+	if r.Password == "" {
+		errs["password"] = "requis"
+	}
+	return errs
+}
