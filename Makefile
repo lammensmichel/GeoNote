@@ -1,4 +1,4 @@
-.PHONY: help dev dev-down build test lint migrate seed
+.PHONY: help dev dev-down build test lint migrate migrate-status migrate-baseline seed
 
 help: ## Afficher l'aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -50,12 +50,20 @@ mobile-analyze: ## Analyser le code Flutter
 
 # ---- Database ----
 
-migrate: ## Executer les migrations SQL
-	@echo "Appliquer les migrations via Docker..."
-	cd docker && docker compose exec db psql -U geonote -d geonote -f /docker-entrypoint-initdb.d/001_init_schema.up.sql
+# Base locale Docker par defaut ; en production, passer DATABASE_URL (Neon).
+LOCAL_DATABASE_URL ?= postgres://geonote:geonote@localhost:5432/geonote?sslmode=disable
 
-seed: ## Charger les donnees de test
-	cd docker && docker compose exec db psql -U geonote -d geonote -f /docker-entrypoint-initdb.d/002_seed_data.up.sql
+migrate: ## Appliquer les migrations manquantes (DATABASE_URL, sinon base Docker locale)
+	DATABASE_URL="$${DATABASE_URL:-$(LOCAL_DATABASE_URL)}" ./scripts/migrate.sh
+
+migrate-status: ## Voir les migrations appliquees et a faire
+	DATABASE_URL="$${DATABASE_URL:-$(LOCAL_DATABASE_URL)}" ./scripts/migrate.sh --status
+
+migrate-baseline: ## Base deja creee par Docker : marquer les migrations comme appliquees
+	DATABASE_URL="$${DATABASE_URL:-$(LOCAL_DATABASE_URL)}" ./scripts/migrate.sh --baseline
+
+seed: ## Charger les donnees de test (base locale uniquement)
+	DATABASE_URL="$${DATABASE_URL:-$(LOCAL_DATABASE_URL)}" ./scripts/migrate.sh --seed
 
 psql: ## Ouvrir un shell PostgreSQL
 	cd docker && docker compose exec db psql -U geonote -d geonote

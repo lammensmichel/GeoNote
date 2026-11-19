@@ -1,0 +1,54 @@
+name: Migrations CI
+
+on:
+  push:
+    branches: [main]
+    paths: ['backend/migrations/**', 'scripts/migrate.sh', '.github/workflows/migrations-ci.yml']
+  pull_request:
+    paths: ['backend/migrations/**', 'scripts/migrate.sh', '.github/workflows/migrations-ci.yml']
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_DB: geonote
+          POSTGRES_USER: geonote
+          POSTGRES_PASSWORD: geonote
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://geonote:geonote@localhost:5432/geonote?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck
+        run: shellcheck scripts/migrate.sh
+
+      - name: Apply migrations on an empty database
+        run: scripts/migrate.sh
+
+      - name: Second run applies nothing
+        run: scripts/migrate.sh | tee out.txt && grep -q '^0 migration' out.txt
+
+      - name: Status
+        run: scripts/migrate.sh --status
+
+      - name: Seed (local only)
+        run: scripts/migrate.sh --seed
+
+      - name: SQL functions answer
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "SELECT count(*) FROM get_nearby_messages(48.8566, 2.3522, 5000, 50, NULL);" \
+            -c "SELECT count(*) FROM get_heatmap(48.8566, 2.3522, 5000);" \
+            -c "SELECT count(*) FROM detect_events(48.8566, 2.3522, 5000);"
