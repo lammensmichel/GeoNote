@@ -50,8 +50,9 @@ mobile-analyze: ## Analyser le code Flutter
 
 # ---- Database ----
 
-# Base locale Docker par defaut ; en production, passer DATABASE_URL (Neon).
-LOCAL_DATABASE_URL ?= postgres://geonote:geonote@localhost:5432/geonote?sslmode=disable
+# Base locale Docker par defaut (memes DB_PORT / DB_PASSWORD que docker-compose).
+# En production : DATABASE_URL='<URL directe Neon>' make migrate (confirmation demandee).
+LOCAL_DATABASE_URL ?= postgres://geonote:$${DB_PASSWORD:-geonote}@localhost:$${DB_PORT:-5432}/geonote?sslmode=disable
 
 migrate: ## Appliquer les migrations manquantes (DATABASE_URL, sinon base Docker locale)
 	DATABASE_URL="$${DATABASE_URL:-$(LOCAL_DATABASE_URL)}" ./scripts/migrate.sh
@@ -59,8 +60,9 @@ migrate: ## Appliquer les migrations manquantes (DATABASE_URL, sinon base Docker
 migrate-status: ## Voir les migrations appliquees et a faire
 	DATABASE_URL="$${DATABASE_URL:-$(LOCAL_DATABASE_URL)}" ./scripts/migrate.sh --status
 
-migrate-baseline: ## Base deja creee par Docker : marquer les migrations comme appliquees
-	DATABASE_URL="$${DATABASE_URL:-$(LOCAL_DATABASE_URL)}" ./scripts/migrate.sh --baseline
+migrate-baseline: ## Base deja creee : marquer jusqu'a UPTO (ex. make migrate-baseline UPTO=007)
+	@test -n "$(UPTO)" || { echo "Indiquez la derniere migration presente : make migrate-baseline UPTO=007"; exit 2; }
+	DATABASE_URL="$${DATABASE_URL:-$(LOCAL_DATABASE_URL)}" ./scripts/migrate.sh --baseline=$(UPTO)
 
 seed: ## Charger les donnees de test (base locale uniquement)
 	DATABASE_URL="$${DATABASE_URL:-$(LOCAL_DATABASE_URL)}" ./scripts/migrate.sh --seed

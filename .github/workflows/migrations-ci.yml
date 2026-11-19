@@ -3,9 +3,9 @@ name: Migrations CI
 on:
   push:
     branches: [main]
-    paths: ['backend/migrations/**', 'scripts/migrate.sh', '.github/workflows/migrations-ci.yml']
+    paths: ['backend/migrations/**', 'scripts/migrate.sh', '.github/workflows/migrations-ci.yml', 'Makefile']
   pull_request:
-    paths: ['backend/migrations/**', 'scripts/migrate.sh', '.github/workflows/migrations-ci.yml']
+    paths: ['backend/migrations/**', 'scripts/migrate.sh', '.github/workflows/migrations-ci.yml', 'Makefile']
 
 jobs:
   migrate:
@@ -38,7 +38,10 @@ jobs:
         run: scripts/migrate.sh
 
       - name: Second run applies nothing
-        run: scripts/migrate.sh | tee out.txt && grep -q '^0 migration' out.txt
+        run: |
+          set -o pipefail
+          scripts/migrate.sh | tee out.txt
+          grep -q '^0 migration' out.txt
 
       - name: Status
         run: scripts/migrate.sh --status
