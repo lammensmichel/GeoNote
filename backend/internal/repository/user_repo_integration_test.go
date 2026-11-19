@@ -47,7 +47,8 @@ func TestUserRepoDelete(t *testing.T) {
 		othMsg = "d0000000-0000-0000-0000-0000000000b1"
 	)
 	cleanup := func() {
-		pool.Exec(ctx, `DELETE FROM users WHERE id IN ($1, $2)`, victim, other) //nolint:errcheck
+		pool.Exec(ctx, `DELETE FROM users WHERE id IN ($1, $2)`, victim, other)              //nolint:errcheck
+		pool.Exec(ctx, `DELETE FROM beta_signups WHERE email LIKE 'del\_%@example.invalid'`) //nolint:errcheck
 	}
 	cleanup()
 	t.Cleanup(cleanup)
@@ -65,7 +66,8 @@ func TestUserRepoDelete(t *testing.T) {
 	      ($1, $2, 'like', NULL), ($1, $2, 'comment', 'hi'), ($3, $4, 'like', NULL)`,
 		othMsg, victim, ownMsg, other)
 	exec(`INSERT INTO reactions (message_id, user_id, emoji) VALUES ($1, $2, '🔥')`, othMsg, victim)
-	exec(`INSERT INTO message_unlocks (message_id, user_id) VALUES ($1, $2)`, othMsg, victim)
+	exec(`INSERT INTO message_unlocks (message_id, user_id) VALUES ($1, $2), ($3, $2)`, othMsg, victim, ownMsg)
+	exec(`INSERT INTO beta_signups (email) VALUES ('del_victim@example.invalid'), ('del_other@example.invalid')`)
 	exec(`INSERT INTO content_reports (reporter_id, message_id, reason) VALUES ($1, $2, 'spam')`, victim, othMsg)
 	exec(`INSERT INTO user_streaks (user_id, total_posts) VALUES ($1, 1)`, victim)
 	exec(`INSERT INTO user_badges (user_id, badge_type) VALUES ($1, 'first_post')`, victim)
@@ -100,6 +102,12 @@ func TestUserRepoDelete(t *testing.T) {
 	}
 	if likes != 0 || comments != 0 || unlocks != 0 {
 		t.Errorf("counters = likes %d, comments %d, unlocks %d; want 0,0,0", likes, comments, unlocks)
+	}
+	if n := count(`SELECT COUNT(*) FROM beta_signups WHERE email = 'del_victim@example.invalid'`); n != 0 {
+		t.Error("beta signup of the deleted user still present")
+	}
+	if n := count(`SELECT COUNT(*) FROM beta_signups WHERE email = 'del_other@example.invalid'`); n != 1 {
+		t.Error("beta signup of the other user must be kept")
 	}
 	if n := count(`SELECT COUNT(*) FROM users WHERE id = $1`, other); n != 1 {
 		t.Error("other user must not be deleted")

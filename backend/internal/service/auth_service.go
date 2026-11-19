@@ -140,7 +140,8 @@ func (s *AuthService) DeleteAccount(ctx context.Context, userID, password string
 		return err
 	}
 	if s.onAccountDeleted != nil {
-		s.onAccountDeleted(ctx)
+		// The account is gone: finish the cleanup even if the client left.
+		s.onAccountDeleted(context.WithoutCancel(ctx))
 	}
 	return nil
 }

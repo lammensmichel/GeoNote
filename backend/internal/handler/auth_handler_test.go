@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,7 +18,10 @@ import (
 	"github.com/mimi6060/GeoNote/backend/internal/service"
 )
 
-type memUserStore struct{ hashes map[string]string }
+type memUserStore struct {
+	hashes    map[string]string
+	deleteErr error
+}
 
 func (m *memUserStore) Create(context.Context, *model.User) error { return nil }
 func (m *memUserStore) GetByEmail(context.Context, string) (*model.User, error) {
@@ -34,6 +38,9 @@ func (m *memUserStore) GetPasswordHash(_ context.Context, id string) (string, er
 	return h, nil
 }
 func (m *memUserStore) Delete(_ context.Context, id string) error {
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
 	if _, ok := m.hashes[id]; !ok {
 		return repository.ErrNotFound
 	}
@@ -54,17 +61,19 @@ func TestDeleteAccountHandler(t *testing.T) {
 		wantStatus int
 		wantCode   string
 		wantGone   bool
+		deleteErr  error
 	}{
-		{"deleted", "u1", `{"password":"password123"}`, http.StatusOK, "", true},
-		{"wrong password", "u1", `{"password":"nope"}`, http.StatusUnauthorized, "WRONG_PASSWORD", false},
-		{"missing password", "u1", `{}`, http.StatusBadRequest, "VALIDATION_ERROR", false},
-		{"no body", "u1", ``, http.StatusBadRequest, "INVALID_JSON", false},
-		{"unknown user", "ghost", `{"password":"password123"}`, http.StatusNotFound, "USER_NOT_FOUND", false},
+		{"deleted", "u1", `{"password":"password123"}`, http.StatusOK, "", true, nil},
+		{"wrong password", "u1", `{"password":"nope"}`, http.StatusUnauthorized, "WRONG_PASSWORD", false, nil},
+		{"missing password", "u1", `{}`, http.StatusBadRequest, "VALIDATION_ERROR", false, nil},
+		{"no body", "u1", ``, http.StatusBadRequest, "INVALID_JSON", false, nil},
+		{"unknown user", "ghost", `{"password":"password123"}`, http.StatusNotFound, "USER_NOT_FOUND", false, nil},
+		{"database error", "u1", `{"password":"password123"}`, http.StatusInternalServerError, "DELETE_FAILED", false, errors.New("db down")},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			store := &memUserStore{hashes: map[string]string{"u1": string(hash)}}
+			store := &memUserStore{hashes: map[string]string{"u1": string(hash)}, deleteErr: tc.deleteErr}
 			h := NewAuthHandler(service.NewAuthService(store, "secret", time.Hour))
 
 			req := httptest.NewRequest(http.MethodDelete, "/api/v1/me", strings.NewReader(tc.body))

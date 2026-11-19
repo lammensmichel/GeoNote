@@ -65,7 +65,7 @@ func (r *UserRepo) GetPasswordHash(ctx context.Context, id string) (string, erro
 
 // Delete removes a user. Every row linked to the user (messages,
 // interactions, reactions, unlocks, reports, streaks, badges) is removed
-// by ON DELETE CASCADE. Like and comment counters on other users' messages
+// by ON DELETE CASCADE; a beta signup with the same email is removed too. Like and comment counters on other users' messages
 // are kept in sync by the interactions trigger; the unlock counter has no
 // DELETE trigger, so it is decremented here in the same transaction.
 // Returns ErrNotFound if nothing was deleted.
@@ -76,6 +76,17 @@ func (r *UserRepo) Delete(ctx context.Context, id string) error {
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
 
+	// Lock the user row: concurrent inserts referencing this user (an
+	// unlock, a like...) wait, so the counter fix below stays exact.
+	var email string
+	err = tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1 FOR UPDATE`, id).Scan(&email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+
 	if _, err := tx.Exec(ctx,
 		`UPDATE messages m
 		 SET unlocks_count = GREATEST(m.unlocks_count - 1, 0)
@@ -83,6 +94,11 @@ func (r *UserRepo) Delete(ctx context.Context, id string) error {
 		 WHERE u.message_id = m.id AND u.user_id = $1 AND m.user_id <> $1`,
 		id,
 	); err != nil {
+		return err
+	}
+
+	// beta_signups has no link to users, only the email address.
+	if _, err := tx.Exec(ctx, `DELETE FROM beta_signups WHERE email = $1`, email); err != nil {
 		return err
 	}
 
