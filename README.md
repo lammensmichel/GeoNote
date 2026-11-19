@@ -1,5 +1,8 @@
 # GeoNote
 
+[![Backend CI](https://github.com/lammensmichel/GeoNote/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/lammensmichel/GeoNote/actions/workflows/backend-ci.yml)
+[![Mobile CI](https://github.com/lammensmichel/GeoNote/actions/workflows/mobile-ci.yml/badge.svg?branch=main)](https://github.com/lammensmichel/GeoNote/actions/workflows/mobile-ci.yml)
+
 Reseau social geolocalise — laissez des messages partout dans le monde.
 
 ## Architecture

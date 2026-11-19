@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+	"log"
 	"net/http"
 
 	"github.com/mimi6060/GeoNote/backend/internal/middleware"
@@ -66,4 +68,34 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	WriteJSON(w, http.StatusOK, user)
+}
+
+// DeleteAccount handles DELETE /api/v1/me: permanently deletes the
+// authenticated user's account and all their data (GDPR right to erasure).
+// Body: {"password": "..."}.
+func (h *AuthHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	var req model.DeleteAccountRequest
+	if err := DecodeJSON(r, &req); err != nil {
+		WriteError(w, http.StatusBadRequest, "INVALID_JSON", "JSON invalide")
+		return
+	}
+	if errs := req.Validate(); len(errs) > 0 {
+		WriteValidationError(w, errs)
+		return
+	}
+
+	err := h.svc.DeleteAccount(r.Context(), userID, req.Password)
+	switch {
+	case err == nil:
+		WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+	case errors.Is(err, service.ErrWrongPassword):
+		WriteError(w, http.StatusUnauthorized, "WRONG_PASSWORD", "Mot de passe incorrect")
+	case errors.Is(err, service.ErrUserNotFound):
+		WriteError(w, http.StatusNotFound, "USER_NOT_FOUND", "Utilisateur introuvable")
+	default:
+		log.Printf("delete account: %v", err)
+		WriteError(w, http.StatusInternalServerError, "DELETE_FAILED", "Suppression impossible, reessayez plus tard")
+	}
 }

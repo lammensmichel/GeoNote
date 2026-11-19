@@ -53,6 +53,7 @@ func main() {
 
 	// ---- Services ----
 	authSvc := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiry)
+	authSvc.OnAccountDeleted(redisCache.InvalidateZone)
 	messageSvc := service.NewMessageService(messageRepo, gamRepo, interactionRepo, redisCache, hub)
 	interactionSvc := service.NewInteractionService(interactionRepo)
 	gamSvc := service.NewGamificationService(gamRepo)
@@ -76,8 +77,8 @@ func main() {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:*", "http://127.0.0.1:*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
-		ExposedHeaders:   []string{"Link"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", middleware.RequestIDHeader},
+		ExposedHeaders:   []string{"Link", middleware.RequestIDHeader},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
@@ -116,6 +117,7 @@ func main() {
 
 			r.Get("/auth/me", authH.Me)
 			r.Get("/me/profile", gamH.GetMyProfile)
+			r.Delete("/me", authH.DeleteAccount)
 
 			r.With(middleware.AntiSpam(5 * time.Second)).Post("/messages", messageH.Create)
 			r.Delete("/messages/{id}", messageH.Delete)
