@@ -3,6 +3,7 @@ package ratelimit
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -115,8 +116,8 @@ func TestFallbackUsesSecondaryOnError(t *testing.T) {
 	l := WithFallback("test", p, NewMemoryCooldown(time.Minute))
 	mustAllow(t, l, "u", true)
 	mustAllow(t, l, "u", false)
-	if p.calls != 2 {
-		t.Fatalf("primary appele %d fois, attendu 2", p.calls)
+	if p.calls != 1 {
+		t.Fatalf("primary appele %d fois, attendu 1 (pause apres erreur)", p.calls)
 	}
 }
 
@@ -126,6 +127,25 @@ func TestFallbackPrefersPrimary(t *testing.T) {
 	mustAllow(t, l, "u", true)
 	if len(sec.last) != 0 {
 		t.Fatal("secondary ne doit pas etre utilise quand primary repond")
+	}
+}
+
+func TestFallbackBreaker(t *testing.T) {
+	clk := newClock()
+	p := &failing{}
+	l := WithFallback("test", p, NewMemoryTokenBucket(1000, 1000)).(*fallback)
+	l.now = clk.now
+
+	for i := 0; i < 5; i++ {
+		mustAllow(t, l, "u", true)
+	}
+	if p.calls != 1 {
+		t.Fatalf("primary appele %d fois pendant la pause, attendu 1", p.calls)
+	}
+	clk.add(breakerPause)
+	mustAllow(t, l, "u", true)
+	if p.calls != 2 {
+		t.Fatalf("primary appele %d fois apres la pause, attendu 2", p.calls)
 	}
 }
 
@@ -213,15 +233,66 @@ func TestRedisTokenBucketShared(t *testing.T) {
 
 func TestRedisCooldown(t *testing.T) {
 	c := redisClient(t)
-	a := NewRedisCooldown(c, "test:spam:", 300*time.Millisecond)
-	b := NewRedisCooldown(c, "test:spam:", 300*time.Millisecond)
+	a := NewRedisCooldown(c, "test:spam:", 5*time.Second)
+	b := NewRedisCooldown(c, "test:spam:", 5*time.Second)
 
 	mustAllow(t, a, "u1", true)
 	mustAllow(t, b, "u1", false) // autre instance : meme delai
 	mustAllow(t, b, "u2", true)
 
-	time.Sleep(400 * time.Millisecond)
+	ttl := c.PTTL(ctx, "test:spam:u1").Val()
+	if ttl <= 4*time.Second || ttl > 5*time.Second {
+		t.Fatalf("TTL = %v, attendu ~5s", ttl)
+	}
+	// Fin du delai : la cle expire et l'action redevient possible.
+	c.Del(ctx, "test:spam:u1")
 	mustAllow(t, b, "u1", true)
+}
+
+// Un Redis qui accepte la connexion mais ne repond jamais ne doit pas
+// bloquer la requete au-dela de redisTimeout.
+func TestRedisHangIsBounded(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			defer conn.Close() // garde la connexion ouverte, sans repondre
+		}
+	}()
+
+	// Memes reglages que la config de production (config.withFastTimeouts).
+	c := redis.NewClient(&redis.Options{
+		Addr:                  ln.Addr().String(),
+		Protocol:              2,
+		DisableIndentity:      true,
+		ContextTimeoutEnabled: true,
+		ReadTimeout:           500 * time.Millisecond,
+		WriteTimeout:          500 * time.Millisecond,
+		DialTimeout:           time.Second,
+		MaxRetries:            1,
+	})
+	defer c.Close()
+
+	for name, l := range map[string]Limiter{
+		"cooldown": NewRedisCooldown(c, "x:", time.Minute),
+		"bucket":   NewRedisTokenBucket(c, "x:", 1, 1),
+	} {
+		start := time.Now()
+		_, err := l.Allow(ctx, "k")
+		if err == nil {
+			t.Fatalf("%s: erreur attendue", name)
+		}
+		if d := time.Since(start); d > redisTimeout+200*time.Millisecond {
+			t.Fatalf("%s: Allow a pris %v, attendu <= %v", name, d, redisTimeout)
+		}
+	}
 }
 
 func TestRedisErrorFallsBackToMemory(t *testing.T) {

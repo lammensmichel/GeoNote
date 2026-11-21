@@ -22,32 +22,43 @@ type Limiter interface {
 	Allow(ctx context.Context, key string) (bool, error)
 }
 
+// breakerPause : apres une erreur Redis, on reste en memoire pendant cette
+// duree sans reessayer Redis, pour ne pas payer un delai a chaque requete.
+const breakerPause = 10 * time.Second
+
 // fallback utilise primary et passe a secondary quand primary renvoie une erreur.
 type fallback struct {
 	name      string
 	primary   Limiter
 	secondary Limiter
+	now       func() time.Time
 
-	mu      sync.Mutex
-	lastLog time.Time
+	mu        sync.Mutex
+	openUntil time.Time
 }
 
 // WithFallback renvoie un limiteur qui utilise secondary si primary echoue.
-// Les erreurs sont journalisees au plus une fois par minute.
+// Apres une erreur, primary n'est plus appele pendant breakerPause.
+// Chaque bascule est journalisee (donc au plus une fois par breakerPause).
 func WithFallback(name string, primary, secondary Limiter) Limiter {
-	return &fallback{name: name, primary: primary, secondary: secondary}
+	return &fallback{name: name, primary: primary, secondary: secondary, now: time.Now}
 }
 
 func (f *fallback) Allow(ctx context.Context, key string) (bool, error) {
-	ok, err := f.primary.Allow(ctx, key)
-	if err == nil {
-		return ok, nil
-	}
 	f.mu.Lock()
-	if time.Since(f.lastLog) > time.Minute {
-		f.lastLog = time.Now()
-		log.Printf("[ratelimit] %s: Redis indisponible, limite en memoire: %v", f.name, err)
-	}
+	open := f.now().Before(f.openUntil)
 	f.mu.Unlock()
+	if !open {
+		ok, err := f.primary.Allow(ctx, key)
+		if err == nil {
+			return ok, nil
+		}
+		f.mu.Lock()
+		if !f.now().Before(f.openUntil) {
+			f.openUntil = f.now().Add(breakerPause)
+			log.Printf("[ratelimit] %s: Redis indisponible, limite en memoire pendant %s: %v", f.name, breakerPause, err)
+		}
+		f.mu.Unlock()
+	}
 	return f.secondary.Allow(ctx, key)
 }

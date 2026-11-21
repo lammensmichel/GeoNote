@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRedisOptionsFromAddr(t *testing.T) {
@@ -38,5 +39,23 @@ func TestRedisOptionsBadURLHidesSecret(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "topsecret") {
 		t.Fatalf("le message d'erreur contient le mot de passe: %v", err)
+	}
+}
+
+func TestRedisOptionsFastTimeouts(t *testing.T) {
+	for _, c := range []*Config{
+		{RedisAddr: "localhost:6379"},
+		{RedisURL: "redis://localhost:6379/0"},
+	} {
+		o, err := c.RedisOptions()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !o.ContextTimeoutEnabled {
+			t.Fatal("ContextTimeoutEnabled doit etre actif")
+		}
+		if o.ReadTimeout > time.Second || o.WriteTimeout > time.Second || o.DialTimeout > time.Second {
+			t.Fatalf("timeouts trop longs: %+v", o)
+		}
 	}
 }

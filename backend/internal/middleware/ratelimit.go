@@ -20,9 +20,9 @@ func writeTooMany(w http.ResponseWriter, code, message string) {
 	})
 }
 
-// clientIP renvoie l'IP du client sans le port. chimw.RealIP remplace deja
-// RemoteAddr par l'IP du proxy en amont ; sinon RemoteAddr vaut "ip:port" et
-// chaque connexion aurait sa propre limite.
+// clientIP renvoie l'IP du client sans le port. TrustedRealIP a deja remplace
+// RemoteAddr par l'IP donnee par le proxy de confiance s'il y en a un ; sinon
+// RemoteAddr vaut "ip:port" et chaque connexion aurait sa propre limite.
 func clientIP(r *http.Request) string {
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		return host

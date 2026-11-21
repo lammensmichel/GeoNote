@@ -20,6 +20,9 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 	CacheTTL      time.Duration
+	// TrustedIPHeader : en-tete ecrit par le proxy devant l'API et donnant
+	// l'IP du client (ex. "X-Real-IP" sur Vercel). Vide = on garde RemoteAddr.
+	TrustedIPHeader string
 }
 
 func Load() *Config {
@@ -38,15 +41,16 @@ func Load() *Config {
 	redisDB, _ := strconv.Atoi(getEnv("REDIS_DB", "0"))
 
 	return &Config{
-		Port:          getEnv("PORT", "8080"),
-		DatabaseURL:   getEnv("DATABASE_URL", "postgres://geonote:geonote@localhost:5432/geonote?sslmode=disable"),
-		JWTSecret:     getEnv("JWT_SECRET", "dev-secret-change-me"),
-		JWTExpiry:     expiry,
-		RedisURL:      getEnv("REDIS_URL", ""),
-		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPassword: getEnv("REDIS_PASSWORD", ""),
-		RedisDB:       redisDB,
-		CacheTTL:      cacheTTL,
+		Port:            getEnv("PORT", "8080"),
+		DatabaseURL:     getEnv("DATABASE_URL", "postgres://geonote:geonote@localhost:5432/geonote?sslmode=disable"),
+		JWTSecret:       getEnv("JWT_SECRET", "dev-secret-change-me"),
+		JWTExpiry:       expiry,
+		RedisURL:        getEnv("REDIS_URL", ""),
+		RedisAddr:       getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:   getEnv("REDIS_PASSWORD", ""),
+		RedisDB:         redisDB,
+		CacheTTL:        cacheTTL,
+		TrustedIPHeader: getEnv("TRUSTED_IP_HEADER", ""),
 	}
 }
 
@@ -60,13 +64,25 @@ func (c *Config) RedisOptions() (*redis.Options, error) {
 			// Ne pas inclure l'URL : elle contient le mot de passe.
 			return nil, fmt.Errorf("REDIS_URL invalide")
 		}
-		return opts, nil
+		return withFastTimeouts(opts), nil
 	}
-	return &redis.Options{
+	return withFastTimeouts(&redis.Options{
 		Addr:     c.RedisAddr,
 		Password: c.RedisPassword,
 		DB:       c.RedisDB,
-	}, nil
+	}), nil
+}
+
+// withFastTimeouts evite qu'un Redis lent bloque les requetes HTTP.
+// Sans ContextTimeoutEnabled, go-redis ignore l'echeance du contexte et
+// attend ReadTimeout (3 s par defaut) a chaque commande.
+func withFastTimeouts(o *redis.Options) *redis.Options {
+	o.ContextTimeoutEnabled = true
+	o.DialTimeout = time.Second
+	o.ReadTimeout = 500 * time.Millisecond
+	o.WriteTimeout = 500 * time.Millisecond
+	o.MaxRetries = 1
+	return o
 }
 
 func getEnv(key, fallback string) string {
