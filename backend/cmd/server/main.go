@@ -39,8 +39,15 @@ func main() {
 	log.Println("connecte a PostgreSQL + PostGIS")
 
 	// ---- Redis Cache ----
-	redisCache := cache.NewRedisCache(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, cfg.CacheTTL)
+	redisOpts, err := cfg.RedisOptions()
+	if err != nil {
+		log.Printf("[cache] %v, Redis desactive", err)
+	}
+	redisCache := cache.NewRedisCache(redisOpts, cfg.CacheTTL)
 	defer redisCache.Close()
+
+	// ---- Limiteurs (partages via Redis entre instances, sinon en memoire) ----
+	ipLimiter, postLimiter := newLimiters(redisCache.Client())
 
 	// ---- WebSocket Hub ----
 	hub := ws.NewHub()
@@ -72,18 +79,18 @@ func main() {
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.Timeout(30 * time.Second))
-	r.Use(chimw.RealIP)
+	r.Use(middleware.TrustedRealIP(cfg.TrustedIPHeader))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:*", "http://127.0.0.1:*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
-		ExposedHeaders:   []string{"Link"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", middleware.RequestIDHeader},
+		ExposedHeaders:   []string{"Link", middleware.RequestIDHeader},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
 	r.Use(middleware.RequestID)
 	r.Use(middleware.SecurityHeaders)
-	r.Use(middleware.RateLimit(10, 20)) // 10 req/s, burst 20
+	r.Use(middleware.RateLimit(ipLimiter)) // 10 req/s, burst 20, par IP
 
 	// ---- Routes ----
 	r.Route("/api/v1", func(r chi.Router) {
@@ -117,7 +124,7 @@ func main() {
 			r.Get("/auth/me", authH.Me)
 			r.Get("/me/profile", gamH.GetMyProfile)
 
-			r.With(middleware.AntiSpam(5 * time.Second)).Post("/messages", messageH.Create)
+			r.With(middleware.AntiSpam(postLimiter)).Post("/messages", messageH.Create)
 			r.Delete("/messages/{id}", messageH.Delete)
 			r.Post("/messages/{id}/unlock", messageH.UnlockMystery)
 

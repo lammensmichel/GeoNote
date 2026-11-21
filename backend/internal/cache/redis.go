@@ -15,23 +15,32 @@ type RedisCache struct {
 	ttl    time.Duration
 }
 
-func NewRedisCache(addr, password string, db int, ttl time.Duration) *RedisCache {
-	client := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: password,
-		DB:       db,
-	})
+// NewRedisCache se connecte a Redis avec opts. Si opts est nil ou si Redis ne
+// repond pas, le cache est desactive (l'API continue sans cache).
+func NewRedisCache(opts *redis.Options, ttl time.Duration) *RedisCache {
+	if opts == nil {
+		log.Printf("[cache] Redis non configure, cache desactive")
+		return &RedisCache{client: nil, ttl: ttl}
+	}
+	client := redis.NewClient(opts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		log.Printf("[cache] Redis indisponible (%s), cache desactive: %v", addr, err)
+		log.Printf("[cache] Redis indisponible (%s), cache desactive: %v", opts.Addr, err)
+		client.Close()
 		return &RedisCache{client: nil, ttl: ttl}
 	}
 
-	log.Printf("[cache] connecte a Redis %s", addr)
+	log.Printf("[cache] connecte a Redis %s", opts.Addr)
 	return &RedisCache{client: client, ttl: ttl}
+}
+
+// Client renvoie le client Redis, ou nil si Redis est indisponible.
+// Il est partage avec les limiteurs (rate limit, anti-spam).
+func (c *RedisCache) Client() *redis.Client {
+	return c.client
 }
 
 // GridKey genere une cle de cache basee sur une grille.

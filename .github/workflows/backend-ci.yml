@@ -3,9 +3,9 @@ name: Backend CI
 on:
   push:
     branches: [main]
-    paths: ['backend/**']
+    paths: ['backend/**', '.github/workflows/backend-ci.yml']
   pull_request:
-    paths: ['backend/**']
+    paths: ['backend/**', '.github/workflows/backend-ci.yml']
 
 jobs:
   test:
@@ -25,6 +25,15 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +45,12 @@ jobs:
         working-directory: backend
         run: go mod download
 
+      - name: Check go.mod / go.sum are tidy
+        working-directory: backend
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
       - name: Vet
         working-directory: backend
         run: go vet ./...
@@ -44,6 +59,7 @@ jobs:
         working-directory: backend
         env:
           DATABASE_URL: postgres://geonote:geonote@localhost:5432/geonote_test?sslmode=disable
+          TEST_REDIS_ADDR: localhost:6379
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Coverage
