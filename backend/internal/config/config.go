@@ -1,11 +1,13 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 )
 
 type Config struct {
@@ -13,6 +15,7 @@ type Config struct {
 	DatabaseURL   string
 	JWTSecret     string
 	JWTExpiry     time.Duration
+	RedisURL      string
 	RedisAddr     string
 	RedisPassword string
 	RedisDB       int
@@ -39,11 +42,31 @@ func Load() *Config {
 		DatabaseURL:   getEnv("DATABASE_URL", "postgres://geonote:geonote@localhost:5432/geonote?sslmode=disable"),
 		JWTSecret:     getEnv("JWT_SECRET", "dev-secret-change-me"),
 		JWTExpiry:     expiry,
+		RedisURL:      getEnv("REDIS_URL", ""),
 		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		RedisDB:       redisDB,
 		CacheTTL:      cacheTTL,
 	}
+}
+
+// RedisOptions renvoie les options de connexion a Redis.
+// REDIS_URL (ex. "rediss://default:motdepasse@hote:6379", format fourni par
+// Upstash, TLS compris) est prioritaire sur REDIS_ADDR / REDIS_PASSWORD / REDIS_DB.
+func (c *Config) RedisOptions() (*redis.Options, error) {
+	if c.RedisURL != "" {
+		opts, err := redis.ParseURL(c.RedisURL)
+		if err != nil {
+			// Ne pas inclure l'URL : elle contient le mot de passe.
+			return nil, fmt.Errorf("REDIS_URL invalide")
+		}
+		return opts, nil
+	}
+	return &redis.Options{
+		Addr:     c.RedisAddr,
+		Password: c.RedisPassword,
+		DB:       c.RedisDB,
+	}, nil
 }
 
 func getEnv(key, fallback string) string {
