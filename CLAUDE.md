@@ -38,6 +38,7 @@ mobile/
 - **message_unlocks**: message_id, user_id (mystery unlock tracking)
 - **user_streaks**: user_id, current_streak, max_streak, total_posts, total_zones, total_unlocks
 - **user_badges**: user_id, badge_type, earned_at
+- Every table linked to `users` uses `ON DELETE CASCADE` (account deletion relies on it — keep it for new tables)
 
 ## API Endpoints
 ### Public
@@ -54,6 +55,7 @@ mobile/
 ### Authenticated
 - `GET /api/v1/auth/me`
 - `GET /api/v1/me/profile` — streak + badges
+- `DELETE /api/v1/me` — delete own account + all data (body `{"password"}`; GDPR)
 - `POST /api/v1/messages` — create (AntiSpam: 30s cooldown)
 - `DELETE /api/v1/messages/{id}`
 - `POST /api/v1/messages/{id}/unlock` — mystery unlock (sends lat/lng)

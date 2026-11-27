@@ -12,13 +12,30 @@ import (
 	"github.com/mimi6060/GeoNote/backend/internal/repository"
 )
 
-type AuthService struct {
-	userRepo  *repository.UserRepo
-	jwtSecret []byte
-	jwtExpiry time.Duration
+// UserStore is the subset of the user repository used by AuthService.
+// *repository.UserRepo implements it; tests use an in-memory fake.
+type UserStore interface {
+	Create(ctx context.Context, user *model.User) error
+	GetByEmail(ctx context.Context, email string) (*model.User, error)
+	GetByID(ctx context.Context, id string) (*model.User, error)
+	GetPasswordHash(ctx context.Context, id string) (string, error)
+	Delete(ctx context.Context, id string) error
 }
 
-func NewAuthService(userRepo *repository.UserRepo, secret string, expiry time.Duration) *AuthService {
+// Errors returned by DeleteAccount.
+var (
+	ErrWrongPassword = errors.New("mot de passe incorrect")
+	ErrUserNotFound  = errors.New("utilisateur introuvable")
+)
+
+type AuthService struct {
+	userRepo         UserStore
+	jwtSecret        []byte
+	jwtExpiry        time.Duration
+	onAccountDeleted func(ctx context.Context)
+}
+
+func NewAuthService(userRepo UserStore, secret string, expiry time.Duration) *AuthService {
 	return &AuthService{
 		userRepo:  userRepo,
 		jwtSecret: []byte(secret),
@@ -94,6 +111,39 @@ func (s *AuthService) ValidateToken(tokenStr string) (string, error) {
 
 func (s *AuthService) GetUser(ctx context.Context, id string) (*model.User, error) {
 	return s.userRepo.GetByID(ctx, id)
+}
+
+// OnAccountDeleted registers a callback run after a successful account
+// deletion (used to invalidate the nearby-messages cache).
+func (s *AuthService) OnAccountDeleted(fn func(ctx context.Context)) {
+	s.onAccountDeleted = fn
+}
+
+// DeleteAccount permanently deletes the user and all their data, after
+// checking the password again so a stolen or forgotten-open session
+// cannot erase an account on its own.
+func (s *AuthService) DeleteAccount(ctx context.Context, userID, password string) error {
+	hash, err := s.userRepo.GetPasswordHash(ctx, userID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return ErrUserNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+		return ErrWrongPassword
+	}
+	if err := s.userRepo.Delete(ctx, userID); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return ErrUserNotFound
+		}
+		return err
+	}
+	if s.onAccountDeleted != nil {
+		// The account is gone: finish the cleanup even if the client left.
+		s.onAccountDeleted(context.WithoutCancel(ctx))
+	}
+	return nil
 }
 
 func (s *AuthService) generateToken(userID string) (string, error) {
