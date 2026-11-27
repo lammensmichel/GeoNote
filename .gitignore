@@ -35,3 +35,6 @@ docker/.env
 node_modules/
 .env
 *.log
+
+# Vercel (identifiants du projet lies en local)
+.vercel/

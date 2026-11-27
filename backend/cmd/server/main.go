@@ -25,18 +25,28 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("configuration invalide:\n%v", err)
+	}
 
 	// ---- Database (PostgreSQL + PostGIS) ----
-	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+	poolCfg, err := cfg.PoolConfig()
+	if err != nil {
+		log.Fatalf("connexion DB impossible: %v", err)
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), poolCfg)
 	if err != nil {
 		log.Fatalf("connexion DB impossible: %v", err)
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(context.Background()); err != nil {
+	pingCtx, cancelPing := context.WithTimeout(context.Background(), 15*time.Second)
+	err = pool.Ping(pingCtx)
+	cancelPing()
+	if err != nil {
 		log.Fatalf("ping DB echoue: %v", err)
 	}
-	log.Println("connecte a PostgreSQL + PostGIS")
+	log.Printf("connecte a PostgreSQL + PostGIS (pool max %d)", cfg.DBMaxConns)
 
 	// ---- Redis Cache ----
 	redisOpts, err := cfg.RedisOptions()
@@ -82,7 +92,7 @@ func main() {
 	r.Use(chimw.Timeout(30 * time.Second))
 	r.Use(middleware.TrustedRealIP(cfg.TrustedIPHeader))
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:*", "http://127.0.0.1:*"},
+		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", middleware.RequestIDHeader},
 		ExposedHeaders:   []string{"Link", middleware.RequestIDHeader},
@@ -154,12 +164,14 @@ func main() {
 	})
 
 	// ---- Server ----
+	// PORT est fourni par Vercel (preset Go) ; 8080 en local et dans Docker.
 	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      r,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:              ":" + cfg.Port,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {

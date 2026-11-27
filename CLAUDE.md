@@ -123,6 +123,8 @@ mobile/
 - Rate limiter + anti-spam state lives in Redis (`internal/ratelimit`), shared across instances; falls back to in-memory for 10s if Redis errors
 - Redis config: `REDIS_URL` (e.g. Upstash `rediss://…`) wins over `REDIS_ADDR`/`REDIS_PASSWORD`/`REDIS_DB`
 - Client IP: only the header named in `TRUSTED_IP_HEADER` is trusted (e.g. `X-Real-IP` on Vercel); empty = connection address
+- Vercel: `backend/vercel.json` (`"framework": "go"`, Root Directory `backend`, entry `cmd/server/main.go`, listens on `PORT`)
+- Deployed mode (`VERCEL` set or `APP_ENV=production`): startup refuses dev `JWT_SECRET`/`DATABASE_URL` and CORS wildcards; CORS origins come only from `CORS_ALLOWED_ORIGINS`; pgx pool size `DB_MAX_CONNS` (5 on Vercel)
 - Radius capped at 1000m, limit capped at 50
 - Ranked sort: 40% distance + 30% likes(log) + 30% recency(6h half-life)
 - Flutter: smart reload (>100m moved AND >5s elapsed)
