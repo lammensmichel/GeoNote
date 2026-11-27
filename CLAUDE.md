@@ -118,8 +118,11 @@ mobile/
 - PostGIS `location geometry(Point, 4326)` with GIST index
 - Bounding box pre-filter (`ST_MakeEnvelope`) before `ST_DWithin`
 - Grid-based Redis cache (`grid:lat3:lng3:radius:uid`)
-- Token bucket rate limiter (10 req/s, burst 20)
-- Anti-spam: 1 message per 30s per user
+- Token bucket rate limiter (10 req/s, burst 20) per client IP
+- Anti-spam: 1 message per cooldown per user (`postCooldown` in `cmd/server/limiters.go`, currently 5s)
+- Rate limiter + anti-spam state lives in Redis (`internal/ratelimit`), shared across instances; falls back to in-memory for 10s if Redis errors
+- Redis config: `REDIS_URL` (e.g. Upstash `rediss://…`) wins over `REDIS_ADDR`/`REDIS_PASSWORD`/`REDIS_DB`
+- Client IP: only the header named in `TRUSTED_IP_HEADER` is trusted (e.g. `X-Real-IP` on Vercel); empty = connection address
 - Radius capped at 1000m, limit capped at 50
 - Ranked sort: 40% distance + 30% likes(log) + 30% recency(6h half-life)
 - Flutter: smart reload (>100m moved AND >5s elapsed)
