@@ -19,6 +19,8 @@ const (
 	defaultDatabaseURL = "postgres://geonote:geonote@localhost:5432/geonote?sslmode=disable"
 	defaultJWTSecret   = "dev-secret-change-me"
 	defaultDBMaxConns  = 10
+	// Sur Vercel, chaque instance a son propre pool : on reste petit.
+	deployedDBMaxConns = 5
 	minJWTSecretLen    = 32
 )
 
@@ -71,12 +73,17 @@ func Load() *Config {
 
 	redisDB, _ := strconv.Atoi(getEnv("REDIS_DB", "0"))
 
-	dbMaxConns, err3 := strconv.Atoi(getEnv("DB_MAX_CONNS", strconv.Itoa(defaultDBMaxConns)))
-	if err3 != nil || dbMaxConns < 1 {
-		dbMaxConns = defaultDBMaxConns
-	}
+	appEnv := strings.ToLower(getEnv("APP_ENV", ""))
+	deployed := getEnv("VERCEL", "") != "" || appEnv == "production" || appEnv == "prod"
 
-	deployed := getEnv("VERCEL", "") != "" || strings.EqualFold(getEnv("APP_ENV", ""), "production")
+	poolDefault := defaultDBMaxConns
+	if deployed {
+		poolDefault = deployedDBMaxConns
+	}
+	dbMaxConns, err3 := strconv.Atoi(getEnv("DB_MAX_CONNS", strconv.Itoa(poolDefault)))
+	if err3 != nil || dbMaxConns < 1 {
+		dbMaxConns = poolDefault
+	}
 
 	origins := splitList(getEnv("CORS_ALLOWED_ORIGINS", ""))
 	if !deployed {

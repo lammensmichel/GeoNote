@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mimi6060/GeoNote/backend/internal/cache"
@@ -91,14 +90,7 @@ func main() {
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.Timeout(30 * time.Second))
 	r.Use(middleware.TrustedRealIP(cfg.TrustedIPHeader))
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   cfg.CORSAllowedOrigins,
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", middleware.RequestIDHeader},
-		ExposedHeaders:   []string{"Link", middleware.RequestIDHeader},
-		AllowCredentials: true,
-		MaxAge:           300,
-	}))
+	r.Use(middleware.CORS(cfg.CORSAllowedOrigins))
 	r.Use(middleware.RequestID)
 	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.RateLimit(ipLimiter)) // 10 req/s, burst 20, par IP

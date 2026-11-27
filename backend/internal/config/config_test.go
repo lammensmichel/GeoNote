@@ -91,6 +91,7 @@ func TestDeployedRejectsDevValues(t *testing.T) {
 		{"VERCEL": "1"},
 		{"APP_ENV": "production"},
 		{"APP_ENV": "Production"},
+		{"APP_ENV": "prod"},
 	} {
 		clearEnv(t)
 		for k, v := range env {
@@ -99,6 +100,9 @@ func TestDeployedRejectsDevValues(t *testing.T) {
 		c := Load()
 		if !c.Deployed {
 			t.Fatalf("%v: doit etre en mode deploye", env)
+		}
+		if c.DBMaxConns != deployedDBMaxConns {
+			t.Fatalf("%v: pool par defaut en production = %d", env, c.DBMaxConns)
 		}
 		err := c.Validate()
 		if err == nil {
@@ -127,13 +131,13 @@ func TestDeployedValidConfig(t *testing.T) {
 	t.Setenv("VERCEL", "1")
 	t.Setenv("DATABASE_URL", "postgres://u:p@ep-x-pooler.eu-central-1.aws.neon.tech/db?sslmode=require")
 	t.Setenv("JWT_SECRET", strongSecret)
-	t.Setenv("DB_MAX_CONNS", "5")
+	t.Setenv("DB_MAX_CONNS", "3")
 	t.Setenv("CORS_ALLOWED_ORIGINS", " https://app.example.be/ , https://example.be ,")
 	c := Load()
 	if err := c.Validate(); err != nil {
 		t.Fatalf("config de production valide refusee: %v", err)
 	}
-	if c.DBMaxConns != 5 {
+	if c.DBMaxConns != 3 {
 		t.Fatalf("DBMaxConns = %d", c.DBMaxConns)
 	}
 	want := []string{"https://app.example.be", "https://example.be"}
