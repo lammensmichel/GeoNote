@@ -18,7 +18,7 @@ backend/
     middleware/                — Auth, OptionalAuth, RateLimit, AntiSpam
     cache/                     — Redis cache (grid-based keys)
     ws/                        — WebSocket hub + client
-  migrations/                  — SQL migrations (run on DB init)
+  migrations/                  — SQL migrations (Docker init in dev; scripts/migrate.sh elsewhere)
 docker/
   docker-compose.yml           — PostGIS + Redis + API (port 3001)
 mobile/
@@ -139,6 +139,9 @@ cd docker && docker compose up -d --build
 
 # Start frontend
 cd mobile && flutter run -d chrome --web-port=8080
+
+# Apply new SQL migrations (see docs/migrations.md)
+make migrate
 
 # Backend API at http://localhost:3001
 # Frontend at http://localhost:8080
